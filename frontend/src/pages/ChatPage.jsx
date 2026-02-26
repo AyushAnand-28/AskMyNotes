@@ -5,7 +5,8 @@ import { askQuestion } from '../utils/mockApi';
 import { marked } from 'marked';
 import {
     Send, Bot, User, MessageSquare, ShieldCheck,
-    Link, FileText, AlertCircle, ChevronRight, SearchX
+    Link, FileText, AlertCircle, ChevronRight, SearchX,
+    Mic, MicOff, Upload, Volume2, VolumeX
 } from 'lucide-react';
 
 function TypingIndicator() {
@@ -21,7 +22,7 @@ function TypingIndicator() {
     );
 }
 
-function AnswerMessage({ msg }) {
+function AnswerMessage({ msg, onSpeak }) {
     const data = msg.data;
 
     if (data?.notFound) {
@@ -58,6 +59,15 @@ function AnswerMessage({ msg }) {
                             <span className={`confidence-badge ${data?.confidence?.toLowerCase()}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <ShieldCheck size={12} /> {data?.confidence}
                             </span>
+                            {data?.answer && (
+                                <button
+                                    className="voice-action-btn"
+                                    onClick={() => onSpeak(data.answer)}
+                                    title="Speak this answer"
+                                >
+                                    <Volume2 size={14} /> Speak
+                                </button>
+                            )}
                         </div>
 
                         {data?.evidence?.length > 0 && (
@@ -92,12 +102,84 @@ export default function ChatPage() {
     const messagesEndRef = useRef(null);
     const textareaRef = useRef(null);
 
+    // Voice input state
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const timerRef = useRef(null);
+    const audioInputRef = useRef(null);
+
+    // TTS state
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [activeSubject?.chatHistory, isTyping]);
 
-    const handleSend = async () => {
-        const text = inputText.trim();
+    // ── Text-to-Speech ──────────────────────────────────────
+    const speakText = (text) => {
+        // Strip markdown for cleaner speech
+        const plainText = text
+            .replace(/[#*_`~>\-\[\]()!]/g, '')
+            .replace(/\n+/g, '. ')
+            .trim();
+
+        if (!plainText) return;
+
+        if (isSpeaking) {
+            window.speechSynthesis.cancel();
+            setIsSpeaking(false);
+            return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance(plainText);
+        utterance.rate = 1;
+        utterance.pitch = 1;
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v => v.name.includes('Samantha'))
+            || voices.find(v => v.name.includes('Google'))
+            || voices.find(v => v.lang.startsWith('en'));
+        if (preferred) utterance.voice = preferred;
+
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+
+        window.speechSynthesis.speak(utterance);
+    };
+
+    // ── Transcribe audio blob → text ────────────────────────
+    const transcribeAudio = async (blob) => {
+        setIsTranscribing(true);
+        try {
+            const formData = new FormData();
+            formData.append('audio', blob, 'recording.webm');
+
+            const response = await fetch('/api/transcribe', {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json();
+
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            return data.text;
+        } catch (err) {
+            console.error('Transcription error:', err);
+            return null;
+        } finally {
+            setIsTranscribing(false);
+        }
+    };
+
+    // ── Send question (text) → API → speak response ─────────
+    const handleSend = async (overrideText) => {
+        const text = (overrideText || inputText).trim();
         if (!text || isTyping) return;
 
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -114,6 +196,11 @@ export default function ChatPage() {
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 data: response,
             });
+
+            // Auto-speak the response if it came from voice input
+            if (overrideText && response.answer && !response.notFound) {
+                speakText(response.answer);
+            }
         } catch (err) {
             console.error('Chat error:', err);
             addMessage(activeSubjectId, {
@@ -132,8 +219,83 @@ export default function ChatPage() {
         }
     };
 
+    // ── Mic Recording ───────────────────────────────────────
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                clearInterval(timerRef.current);
+                setRecordingTime(0);
+
+                const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const text = await transcribeAudio(blob);
+
+                if (text) {
+                    // Auto-send the transcribed text
+                    await handleSend(text);
+                }
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingTime(0);
+
+            timerRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+        } catch (err) {
+            alert('Microphone access denied. Please allow microphone permissions.');
+            console.error(err);
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        setIsRecording(false);
+        clearInterval(timerRef.current);
+    };
+
+    const toggleRecording = () => {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    };
+
+    // ── Upload Audio File ───────────────────────────────────
+    const handleAudioUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const text = await transcribeAudio(file);
+        if (text) {
+            await handleSend(text);
+        }
+
+        // Reset file input
+        e.target.value = '';
+    };
+
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    };
+
+    const formatTime = (seconds) => {
+        const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+        const s = String(seconds % 60).padStart(2, '0');
+        return `${m}:${s}`;
     };
 
     if (!isSetupComplete) {
@@ -191,6 +353,9 @@ export default function ChatPage() {
                                 </button>
                             ))}
                         </div>
+                        <div className="voice-hint" style={{ marginTop: 16, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            💡 You can also use the <strong>mic button</strong> to ask questions by voice
+                        </div>
                     </div>
                 )}
 
@@ -206,15 +371,58 @@ export default function ChatPage() {
                             </div>
                         );
                     }
-                    return <AnswerMessage key={i} msg={msg} />;
+                    return <AnswerMessage key={i} msg={msg} onSpeak={speakText} />;
                 })}
 
                 {isTyping && <TypingIndicator />}
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Transcribing indicator */}
+            {isTranscribing && (
+                <div className="transcribing-bar">
+                    <div className="transcribing-spinner" />
+                    <span>Converting speech to text…</span>
+                </div>
+            )}
+
             <div className="chat-input-area">
                 <div className="chat-input-row">
+                    {/* Mic button */}
+                    <button
+                        className={`voice-btn ${isRecording ? 'recording' : ''}`}
+                        onClick={toggleRecording}
+                        disabled={isTyping || isTranscribing}
+                        title={isRecording ? 'Stop recording' : 'Record voice'}
+                    >
+                        {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
+                    </button>
+
+                    {/* Upload audio button */}
+                    <button
+                        className="voice-btn upload"
+                        onClick={() => audioInputRef.current?.click()}
+                        disabled={isTyping || isRecording || isTranscribing}
+                        title="Upload audio file"
+                    >
+                        <Upload size={16} />
+                    </button>
+                    <input
+                        ref={audioInputRef}
+                        type="file"
+                        accept="audio/*"
+                        style={{ display: 'none' }}
+                        onChange={handleAudioUpload}
+                    />
+
+                    {/* Recording timer */}
+                    {isRecording && (
+                        <div className="recording-timer">
+                            <div className="recording-dot" />
+                            {formatTime(recordingTime)}
+                        </div>
+                    )}
+
                     <textarea
                         ref={textareaRef}
                         rows={1}
@@ -222,14 +430,26 @@ export default function ChatPage() {
                         value={inputText}
                         onChange={e => setInputText(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        disabled={isTyping}
+                        disabled={isTyping || isRecording || isTranscribing}
                     />
-                    <button className="send-btn" onClick={handleSend} disabled={!inputText.trim() || isTyping}>
+
+                    <button className="send-btn" onClick={() => handleSend()} disabled={!inputText.trim() || isTyping}>
                         <Send size={18} />
                     </button>
+
+                    {/* Stop speaking button */}
+                    {isSpeaking && (
+                        <button
+                            className="voice-btn stop-speak"
+                            onClick={() => { window.speechSynthesis.cancel(); setIsSpeaking(false); }}
+                            title="Stop speaking"
+                        >
+                            <VolumeX size={18} />
+                        </button>
+                    )}
                 </div>
                 <div className="chat-hint">
-                    Enter to send · Shift+Enter for new line · Answers scoped to {activeSubject?.name}
+                    Enter to send · Shift+Enter for new line · 🎤 Record or upload audio · Answers scoped to {activeSubject?.name}
                 </div>
             </div>
         </div>

@@ -6,6 +6,7 @@ const connectDB = require("./config/db");
 const uploadRoutes = require("./routes/upload");
 const chatRoutes = require("./routes/chat");
 const studyRoutes = require("./routes/study");
+const transcribeRoutes = require("./routes/transcribe");
 const Subject = require("./models/Subject");
 const File = require("./models/File");
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use("/api", uploadRoutes);
 app.use("/api", chatRoutes);
 app.use("/api", studyRoutes);
+app.use("/api", transcribeRoutes);
 
 app.get("/api/health", async (req, res) => {
     try {

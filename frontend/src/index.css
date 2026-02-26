@@ -1450,3 +1450,158 @@ pre,
   font-weight: 500;
   color: var(--text-primary);
 }
+
+/* Voice Integration Styles */
+.voice-btn {
+  width: 44px;
+  height: 44px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.voice-btn:hover:not(:disabled) {
+  border-color: var(--accent-neon);
+  color: var(--accent-neon);
+  background: var(--bg-hover);
+}
+
+.voice-btn.recording {
+  background: var(--accent-red);
+  color: white;
+  border-color: var(--accent-red);
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 69, 58, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 69, 58, 0);
+  }
+}
+
+.recording-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--accent-red);
+  font-weight: 600;
+  margin: 0 8px;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-red);
+  border-radius: 50%;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.transcribing-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  color: var(--accent-neon);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.transcribing-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent-neon-dim);
+  border-top: 2px solid var(--accent-neon);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.voice-action-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition);
+  text-transform: uppercase;
+}
+
+.voice-action-btn:hover {
+  border-color: var(--accent-neon);
+  color: var(--accent-neon);
+  background: var(--bg-hover);
+}
+
+.stop-speak {
+  background: var(--accent-neon-dim);
+  color: var(--accent-neon);
+  border-color: var(--accent-neon);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-family: inherit;
+  resize: none;
+  min-height: 44px;
+  max-height: 200px;
+  outline: none;
+  line-height: 1.4;
+  transition: var(--transition);
+}
